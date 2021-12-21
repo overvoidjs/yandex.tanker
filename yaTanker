@@ -1,0 +1,168 @@
+#!/usr/bin/env bash
+
+# имя функции для запуска
+FUNCTION=
+if [ ! -z $1 ]; then
+    FUNCTION="$1"
+fi
+
+showHelp(){
+  echo -e "run - запуск Я.Танка"
+  echo -e "clear - удаление проекта"
+}
+
+run(){
+  checker
+  echo -e "Проверка прошла успешно, запускаем Я.Танк? [y/n]"
+
+  read answer
+  if [ "$answer" == "y" ]; then
+    echo -e "Запускаю..."
+    docker run -v $PWD/Tank:/var/loadtest -it direvius/yandex-tank
+  else
+    echo -e "Хорошего дня :)"
+    exit 1
+  fi
+}
+
+clear(){
+  sudo rm -rf ./Tank
+}
+
+checker(){
+  #Проверка наличия докера
+  if ! type docker &> /dev/null; then
+    echo -e "У вас не установлен docker - сперва установите его"
+    exit 1
+  fi
+  #Проверяем наличие каталога для танка
+  if [ ! -d ./Tank ]; then
+    mkdir ./Tank
+    echo -e "Создана дирректория для работы Я.Танк"
+  fi
+  #Проверка наличия файла конфигураций
+  if ! test -f ./Tank/load.yaml; then
+    echo -e "Нет конфигурационного файла, давайте создадим новый? [y/n]"
+    read answer
+
+    if [ "$answer" == "y" ]; then
+      echo -e "Приступаем к созданию конфигурационного файла, просто отвечайте на вопросы"
+      generateConfig
+    else
+      echo -e "Без конфигарационного файла работа невозможна. Всего доброго."
+      exit 1
+    fi
+
+  fi
+}
+
+generateToken(){
+  echo -e "Для работы Я.Танка нужен токен, получить его можно зарегистрировавшись на сайте https://overload.yandex.net"
+  echo -e ""
+  echo -e "Вы готовы указать токен? [y/n]"
+
+  read answer
+  if [ "$answer" == "y" ]; then
+    echo -e "Пожалуйста введите токен:"
+    read apitoken
+    echo "$apitoken" > ./Tank/token.txt
+    echo -e "Токен успешно записан!"
+  else
+    echo -e "Без токена ничего не будет рабоать, возвращайтесь когда будет :)"
+    exit 1
+  fi
+}
+
+generateLoad(){
+  #базовый набор
+  echo -e "overload:" >> ./Tank/load.yaml
+  echo -e "  enabled: true" >> ./Tank/load.yaml
+  echo -e "  package: yandextank.plugins.DataUploader" >> ./Tank/load.yaml
+  echo -e "  token_file: 'token.txt'" >> ./Tank/load.yaml
+  echo -e "phantom:" >> ./Tank/load.yaml
+
+  echo -e ""
+  echo -e "--------"
+  echo -e "Сейчас будет провизведена настройка цели для тестирования"
+  echo -e " "
+  echo -e "Укажите адрес цели"
+  read targetUrl
+  echo -e "Укажите порт цели"
+  read targetPort
+  echo -e "  address: $targetUrl:$targetPort" >> ./Tank/load.yaml
+  echo -e "  ssl: true" >> ./Tank/load.yaml
+  echo -e "  connection_test: false" >> ./Tank/load.yaml
+  echo -e "  load_profile:" >> ./Tank/load.yaml
+  echo -e "    load_type: rps" >> ./Tank/load.yaml
+
+  echo -e "Укажите придельную нагрузку RPS"
+  read targetPeakRPS
+  echo -e "Укажите продолжительность нагрузки (30s, 1m, 10m)"
+  read targetTimeRPS
+  echo -e "    schedule: line(1, $targetPeakRPS, $targetTimeRPS)" >> ./Tank/load.yaml
+
+  echo -e ""
+  echo -e "--------"
+  echo -e "Сейчас мы будем добавлять маршруты атаки, когда закончите напишите stop"
+  echo -e "  uris:" >> ./Tank/load.yaml
+
+
+  while :
+  do
+    echo -e "Введите новый url:"
+    read answer
+
+    if [ "$answer" != "stop" ]; then
+      echo -e "    - '$answer'" >> ./Tank/load.yaml
+      echo -e "Добавлен"
+      echo -e ""
+    else
+      break
+    fi
+  done
+
+  echo -e ""
+  echo -e "--------"
+  echo -e "Сейчас мы будем настраивать заголовки"
+  echo -e "Их нужно указывать в формате:"
+  echo -e "Host: yandex.ru"
+  echo -e "Connection: close"
+  echo -e "и.т.д."
+  echo -e "Когда законите напишите stop"
+  echo -e ""
+  echo -e "  headers:" >> ./Tank/load.yaml
+
+  while :
+  do
+    echo -e "Введите новый header:"
+    read answer
+
+    if [ "$answer" != "stop" ]; then
+      echo -e "    - '[$answer]'" >> ./Tank/load.yaml
+      echo -e "Добавлен"
+      echo -e ""
+    else
+      break
+    fi
+  done
+
+  echo -e "telegraf:" >> ./Tank/load.yaml
+  echo -e "  enabled: false" >> ./Tank/load.yaml
+}
+
+generateConfig(){
+  #Проверяем есть ли токен
+  if ! test -f ./Tank/token.txt; then
+    generateToken
+  fi
+  #Проверяем есть ли файл конфигов
+  if ! test -f ./Tank/load.yaml; then
+    generateLoad
+  fi
+}
+
+if [ ! -z $(type -t $FUNCTION | grep function) ]; then
+     $1
+ else
+     showHelp
+fi
